@@ -1,0 +1,9 @@
+backend/.venv/
+backend/news_observer.db
+backend/*.log
+backend/app/__pycache__/
+backend/scripts/__pycache__/
+
+frontend/node_modules/
+frontend/dist/
+frontend/*.log
