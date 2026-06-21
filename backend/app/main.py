@@ -2,11 +2,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
-from .schemas import Article
+from .schemas import Article, Cluster, ClusterDetail
 from .services import (
     get_article,
+    get_cluster,
     list_articles,
     list_articles_by_source,
+    list_clusters,
     list_sources,
 )
 
@@ -49,3 +51,16 @@ def api_list_sources():
 @app.get("/sources/{source}/articles", response_model=list[Article])
 def api_list_articles_by_source(source: str, limit: int = 50):
     return list_articles_by_source(source=source, limit=limit)
+
+
+@app.get("/clusters", response_model=list[Cluster])
+def api_list_clusters(limit: int = 50):
+    return list_clusters(limit=limit)
+
+
+@app.get("/clusters/{cluster_id}", response_model=ClusterDetail)
+def api_get_cluster(cluster_id: int):
+    cluster = get_cluster(cluster_id)
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    return cluster
