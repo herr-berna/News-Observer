@@ -73,6 +73,25 @@ python scripts/collect_articles.py
 
 This reads the configured RSS feeds, extracts article text, and saves new articles to SQLite. Duplicate articles are skipped using the article URL.
 
+After collection, articles are normalized, embedded, checked for near-duplicates,
+and assigned to event clusters automatically.
+
+To rebuild the analysis for all stored articles:
+
+```bash
+python scripts/analyze_articles.py
+```
+
+The first MVP uses deterministic local hashing embeddings, cosine similarity,
+and a 72-hour event window. To favor precision for outlet comparison, each
+event accepts at most one non-duplicate article from the same source. The
+pipeline does not require an external AI API.
+
+Additional endpoints:
+
+- `GET /clusters`
+- `GET /clusters/{id}`
+
 ## Frontend Setup
 
 From the `frontend` directory:
@@ -80,6 +99,12 @@ From the `frontend` directory:
 ```bash
 npm install
 npm run dev
+```
+
+if you have trouble with powershell:
+
+```bash
+npm.cmd run dev
 ```
 
 The React app runs at `http://localhost:5173` and expects the backend API at `http://localhost:8000`.

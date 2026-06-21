@@ -20,3 +20,13 @@ export function fetchArticles() {
 export function fetchArticle(id) {
   return request(`/articles/${id}`);
 }
+
+
+export function fetchClusters(limit = 200) {
+  return request(`/clusters?limit=${limit}`);
+}
+
+
+export function fetchCluster(id) {
+  return request(`/clusters/${id}`);
+}

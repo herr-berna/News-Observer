@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import feedparser
 
+from .feeds import SOURCE_DEFAULTS
 from .models import ArticleMetadata
 
 
@@ -16,6 +17,7 @@ def _published_at(entry) -> str | None:
 def fetch_feed(source: str, feed_url: str) -> list[ArticleMetadata]:
     parsed_feed = feedparser.parse(feed_url)
     articles = []
+    defaults = SOURCE_DEFAULTS.get(source, {})
 
     for entry in parsed_feed.entries:
         title = entry.get("title")
@@ -30,6 +32,15 @@ def fetch_feed(source: str, feed_url: str) -> list[ArticleMetadata]:
                 title=title,
                 url=link,
                 published_at=_published_at(entry),
+                author=entry.get("author"),
+                country=defaults.get("country"),
+                language=parsed_feed.feed.get("language") or defaults.get("language"),
+                category=entry.get("category"),
+                keywords=[
+                    tag.get("term")
+                    for tag in entry.get("tags", [])
+                    if tag.get("term")
+                ],
             )
         )
 
