@@ -4,3 +4,5 @@ feedparser
 requests
 trafilatura
 pydantic
+openai
+python-dotenv

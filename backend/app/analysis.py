@@ -3,11 +3,10 @@ from datetime import datetime, timedelta, timezone
 
 from .database import get_connection, init_db
 from .normalizer import (
-    EMBEDDING_DIMENSIONS,
-    EMBEDDING_MODEL,
     content_fingerprint,
     cosine_similarity,
-    create_embedding,
+    create_embeddings,
+    current_embedding_model,
     extract_keywords,
     normalize_text,
     tokenize,
@@ -15,7 +14,9 @@ from .normalizer import (
 
 
 CLUSTER_WINDOW_HOURS = 72
-CLUSTER_SIMILARITY_THRESHOLD = 0.22
+CLUSTER_SIMILARITY_THRESHOLD = 0.42
+LOW_OVERLAP_CLUSTER_SIMILARITY_THRESHOLD = 0.68
+TITLELESS_CLUSTER_SIMILARITY_THRESHOLD = 0.72
 DUPLICATE_SIMILARITY_THRESHOLD = 0.92
 EVENT_STOP_WORDS = {
     "day",
@@ -73,6 +74,7 @@ def _store_tags(connection, article_id: int, keywords: list[str]):
 def normalize_and_embed_articles() -> int:
     init_db()
     processed = 0
+    embedding_model = current_embedding_model()
 
     with get_connection() as connection:
         articles = connection.execute(
@@ -87,14 +89,17 @@ def normalize_and_embed_articles() -> int:
                       AND embeddings.model = ?
                )
             """,
-            (EMBEDDING_MODEL,),
+            (embedding_model,),
         ).fetchall()
 
-        for article in articles:
+        embeddings = create_embeddings(
+            [(article["title"], article["text"]) for article in articles]
+        )
+
+        for article, embedding in zip(articles, embeddings):
             normalized_title = normalize_text(article["title"])
             fingerprint = content_fingerprint(article["title"], article["text"])
             keywords = extract_keywords(article["title"], article["text"])
-            embedding = create_embedding(article["title"], article["text"])
             now = datetime.now(timezone.utc).isoformat()
 
             connection.execute(
@@ -119,8 +124,8 @@ def normalize_and_embed_articles() -> int:
                 """,
                 (
                     article["id"],
-                    EMBEDDING_MODEL,
-                    EMBEDDING_DIMENSIONS,
+                    embedding_model,
+                    len(embedding),
                     json.dumps(embedding),
                     now,
                 ),
@@ -202,10 +207,11 @@ def _title_overlap(left: str, right: str) -> float:
 
 def _combined_similarity(article, cluster) -> float:
     overlap = _title_overlap(article["title"], cluster["label"])
-    if overlap == 0:
-        return 0.0
-
     cosine = cosine_similarity(article["vector"], cluster["centroid"])
+    if overlap == 0 and cosine < TITLELESS_CLUSTER_SIMILARITY_THRESHOLD:
+        return 0.0
+    if 0 < overlap < 0.18 and cosine < LOW_OVERLAP_CLUSTER_SIMILARITY_THRESHOLD:
+        return 0.0
     return 0.75 * cosine + 0.25 * overlap
 
 
@@ -274,7 +280,7 @@ def cluster_articles(rebuild: bool = True) -> int:
                 "title": row["title"],
                 "source": row["source"],
                 "date": _event_date(row),
-                "vector": create_embedding(_event_text(row["title"]), None),
+                "vector": json.loads(row["vector"]),
             }
             candidates = [
                 cluster

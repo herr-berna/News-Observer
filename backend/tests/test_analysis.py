@@ -10,6 +10,7 @@ from app.database import init_db
 from app.normalizer import cosine_similarity, create_embedding, normalize_text
 
 
+@patch.dict("os.environ", {"NEWS_OBSERVER_EMBEDDING_PROVIDER": "hashing"})
 class NormalizerTests(unittest.TestCase):
     def test_normalizes_whitespace_and_unicode(self):
         self.assertEqual(
@@ -29,6 +30,7 @@ class NormalizerTests(unittest.TestCase):
         self.assertGreater(related, unrelated)
 
 
+@patch.dict("os.environ", {"NEWS_OBSERVER_EMBEDDING_PROVIDER": "hashing"})
 class AnalysisPipelineTests(unittest.TestCase):
     def setUp(self):
         self.database_path = (

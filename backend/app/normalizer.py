@@ -1,12 +1,33 @@
 import hashlib
 import math
+import os
 import re
 import unicodedata
 from collections import Counter
+from pathlib import Path
 
 
-EMBEDDING_DIMENSIONS = 384
-EMBEDDING_MODEL = "hashing-v2"
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+if load_dotenv:
+    load_dotenv(BACKEND_DIR / ".env")
+
+
+HASHING_EMBEDDING_DIMENSIONS = 384
+HASHING_EMBEDDING_MODEL = "hashing-v2"
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+OPENAI_EMBEDDING_DIMENSIONS = 1536
+
+EMBEDDING_PROVIDER = os.getenv("NEWS_OBSERVER_EMBEDDING_PROVIDER", "auto")
+EMBEDDING_MODEL = os.getenv("NEWS_OBSERVER_EMBEDDING_MODEL", OPENAI_EMBEDDING_MODEL)
+EMBEDDING_DIMENSIONS = int(
+    os.getenv("NEWS_OBSERVER_EMBEDDING_DIMENSIONS", str(OPENAI_EMBEDDING_DIMENSIONS))
+)
 
 TOKEN_PATTERN = re.compile(r"[^\W_]+(?:['’-][^\W_]+)?", re.UNICODE)
 STOP_WORDS = {
@@ -71,11 +92,54 @@ def _feature_tokens(title: str, text: str | None) -> list[tuple[str, float]]:
     return features
 
 
-def create_embedding(
+def _semantic_input(title: str, text: str | None) -> str:
+    title = normalize_text(title)
+    text = normalize_text(text)
+    if text:
+        return f"Title: {title}\n\nArticle text: {text[:6000]}"
+    return title or "untitled article"
+
+
+def _selected_provider() -> str:
+    provider = os.getenv(
+        "NEWS_OBSERVER_EMBEDDING_PROVIDER",
+        EMBEDDING_PROVIDER,
+    ).strip().lower()
+    if provider == "auto":
+        return "openai" if os.getenv("OPENAI_API_KEY") else "hashing"
+    return provider
+
+
+def current_embedding_model() -> str:
+    provider = _selected_provider()
+    if provider == "openai":
+        model = os.getenv("NEWS_OBSERVER_EMBEDDING_MODEL", EMBEDDING_MODEL)
+        return f"openai:{model}"
+    return HASHING_EMBEDDING_MODEL
+
+
+def current_embedding_dimensions() -> int:
+    if _selected_provider() == "openai":
+        return int(
+            os.getenv(
+                "NEWS_OBSERVER_EMBEDDING_DIMENSIONS",
+                str(EMBEDDING_DIMENSIONS),
+            )
+        )
+    return int(
+        os.getenv(
+            "NEWS_OBSERVER_HASHING_EMBEDDING_DIMENSIONS",
+            str(HASHING_EMBEDDING_DIMENSIONS),
+        )
+    )
+
+
+def _create_hashing_embedding(
     title: str,
     text: str | None,
-    dimensions: int = EMBEDDING_DIMENSIONS,
+    dimensions: int | None = None,
 ) -> list[float]:
+    dimensions = dimensions or current_embedding_dimensions()
     vector = [0.0] * dimensions
 
     for feature, weight in _feature_tokens(title, text):
@@ -89,6 +153,45 @@ def create_embedding(
         vector = [value / norm for value in vector]
 
     return vector
+
+
+def _create_openai_embeddings(inputs: list[str]) -> list[list[float]]:
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise RuntimeError(
+            "OpenAI embeddings require the `openai` package. "
+            "Install backend requirements with `pip install -r requirements.txt`."
+        ) from exc
+
+    model = os.getenv("NEWS_OBSERVER_EMBEDDING_MODEL", EMBEDDING_MODEL)
+    dimensions = os.getenv("NEWS_OBSERVER_EMBEDDING_DIMENSIONS")
+    request = {
+        "model": model,
+        "input": inputs,
+        "encoding_format": "float",
+    }
+    if dimensions:
+        request["dimensions"] = int(dimensions)
+
+    response = OpenAI().embeddings.create(**request)
+    return [item.embedding for item in response.data]
+
+
+def create_embedding(title: str, text: str | None) -> list[float]:
+    if _selected_provider() == "openai":
+        return _create_openai_embeddings([_semantic_input(title, text)])[0]
+    return _create_hashing_embedding(title, text)
+
+
+def create_embeddings(items: list[tuple[str, str | None]]) -> list[list[float]]:
+    if not items:
+        return []
+    if _selected_provider() == "openai":
+        return _create_openai_embeddings(
+            [_semantic_input(title, text) for title, text in items]
+        )
+    return [_create_hashing_embedding(title, text) for title, text in items]
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

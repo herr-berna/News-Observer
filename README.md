@@ -107,11 +107,30 @@ Each article title and text is normalized before analysis:
 
 The system also extracts up to 10 keywords per article. Words from the title receive extra weight because RSS article bodies can be noisy, short, or repetitive.
 
-### 2. Local embeddings
+### 2. Semantic embeddings
 
-The current MVP uses deterministic local hashing embeddings instead of an external AI embedding model.
+The current MVP supports semantic OpenAI embeddings and keeps the deterministic local hashing model as an offline fallback.
 
-For each article, the normalizer builds a 384-dimensional vector from:
+By default, the embedding provider is `auto`:
+
+- if `OPENAI_API_KEY` is available, News Observer uses OpenAI embeddings;
+- if no API key is available, it falls back to the local hashing model.
+
+The default semantic model is:
+
+```text
+text-embedding-3-small
+```
+
+Internally, stored OpenAI embedding rows are marked with the model name:
+
+```text
+openai:text-embedding-3-small
+```
+
+OpenAI embeddings convert article text into vectors where distance represents semantic relatedness. This is useful for clustering because two articles can be grouped even when they use different wording for the same event.
+
+The fallback local model builds a 384-dimensional vector from:
 
 - title tokens, with high weight;
 - body tokens, with lower weight;
@@ -119,7 +138,7 @@ For each article, the normalizer builds a 384-dimensional vector from:
 
 Each token is hashed into a vector position, assigned a positive or negative sign, and added to the vector. The final vector is normalized so cosine similarity can be used.
 
-This approach is not as semantically powerful as a transformer embedding model, but it has useful MVP properties:
+The fallback approach is not as semantically powerful as an AI embedding model, but it has useful MVP properties:
 
 - it is fast;
 - it is free;
@@ -127,7 +146,38 @@ This approach is not as semantically powerful as a transformer embedding model, 
 - it works offline;
 - it is good enough to catch many near-identical or strongly related headlines.
 
-The embedding model is currently identified as `hashing-v2`.
+The fallback embedding model is identified as `hashing-v2`.
+
+To force OpenAI embeddings, create a `backend/.env` file:
+
+```env
+OPENAI_API_KEY=your_api_key_here
+NEWS_OBSERVER_EMBEDDING_PROVIDER=openai
+```
+
+You can copy the example file first:
+
+```bash
+copy backend\.env.example backend\.env
+```
+
+On macOS or Linux:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+You can also override the model inside `backend/.env`:
+
+```env
+NEWS_OBSERVER_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+After changing embedding providers or models, rebuild the analysis:
+
+```bash
+python scripts/analyze_articles.py
+```
 
 ### 3. Duplicate detection
 
@@ -174,6 +224,8 @@ combined_score = 0.75 * cosine_similarity + 0.25 * title_overlap
 ```
 
 Title overlap is calculated after removing generic event words such as `live`, `latest`, `news`, `video`, `world`, `war`, and `cup`.
+
+Semantic similarity is allowed to help group articles with different wording, but the algorithm still avoids broad topic-only matches. If two titles have no meaningful token overlap, their cosine similarity must be especially strong before they can be grouped.
 
 The current cluster threshold is:
 
@@ -258,10 +310,10 @@ To rebuild the analysis for all stored articles:
 python scripts/analyze_articles.py
 ```
 
-The first MVP uses deterministic local hashing embeddings, cosine similarity,
-and a 72-hour event window. To favor precision for outlet comparison, each
-event accepts at most one non-duplicate article from the same source. The
-pipeline does not require an external AI API.
+The MVP uses semantic OpenAI embeddings when `OPENAI_API_KEY` is configured.
+Without an API key, it falls back to deterministic local hashing embeddings.
+To favor precision for outlet comparison, each event accepts at most one
+non-duplicate article from the same source.
 
 ## Frontend Setup
 
