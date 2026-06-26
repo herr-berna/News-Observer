@@ -4,18 +4,9 @@ import os
 import re
 import unicodedata
 from collections import Counter
-from pathlib import Path
 
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-
-if load_dotenv:
-    load_dotenv(BACKEND_DIR / ".env")
+from . import config  # noqa: F401
 
 
 HASHING_EMBEDDING_DIMENSIONS = 384

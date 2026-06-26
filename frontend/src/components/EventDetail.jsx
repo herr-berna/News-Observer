@@ -79,7 +79,7 @@ export default function EventDetail({ event, loading, error }) {
         </div>
         <p>
           {event.summary ||
-            "AI-generated summaries are not enabled yet. The source coverage below is grouped by the clustering pipeline."}
+            "No summary has been generated for this event yet. OpenAI summaries are generated on demand and stored after the first successful request."}
         </p>
       </section>
 

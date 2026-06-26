@@ -14,7 +14,8 @@ from .normalizer import (
 
 
 CLUSTER_WINDOW_HOURS = 72
-CLUSTER_SIMILARITY_THRESHOLD = 0.42
+HASHING_CLUSTER_SIMILARITY_THRESHOLD = 0.22
+SEMANTIC_CLUSTER_SIMILARITY_THRESHOLD = 0.42
 LOW_OVERLAP_CLUSTER_SIMILARITY_THRESHOLD = 0.68
 TITLELESS_CLUSTER_SIMILARITY_THRESHOLD = 0.72
 DUPLICATE_SIMILARITY_THRESHOLD = 0.92
@@ -205,9 +206,21 @@ def _title_overlap(left: str, right: str) -> float:
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
 
 
+def _uses_semantic_embeddings() -> bool:
+    return current_embedding_model().startswith("openai:")
+
+
+def _cluster_similarity_threshold() -> float:
+    if _uses_semantic_embeddings():
+        return SEMANTIC_CLUSTER_SIMILARITY_THRESHOLD
+    return HASHING_CLUSTER_SIMILARITY_THRESHOLD
+
+
 def _combined_similarity(article, cluster) -> float:
     overlap = _title_overlap(article["title"], cluster["label"])
     cosine = cosine_similarity(article["vector"], cluster["centroid"])
+    if not _uses_semantic_embeddings() and overlap == 0:
+        return 0.0
     if overlap == 0 and cosine < TITLELESS_CLUSTER_SIMILARITY_THRESHOLD:
         return 0.0
     if 0 < overlap < 0.18 and cosine < LOW_OVERLAP_CLUSTER_SIMILARITY_THRESHOLD:
@@ -290,7 +303,7 @@ def cluster_articles(rebuild: bool = True) -> int:
                 and article["source"] not in cluster["sources"]
             ]
             best_cluster = None
-            best_score = CLUSTER_SIMILARITY_THRESHOLD
+            best_score = _cluster_similarity_threshold()
 
             for candidate in candidates:
                 score = _combined_similarity(article, candidate)

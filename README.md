@@ -171,6 +171,7 @@ You can also override the model inside `backend/.env`:
 
 ```env
 NEWS_OBSERVER_EMBEDDING_MODEL=text-embedding-3-small
+NEWS_OBSERVER_SUMMARY_MODEL=gpt-5.5
 ```
 
 After changing embedding providers or models, rebuild the analysis:
@@ -227,10 +228,11 @@ Title overlap is calculated after removing generic event words such as `live`, `
 
 Semantic similarity is allowed to help group articles with different wording, but the algorithm still avoids broad topic-only matches. If two titles have no meaningful token overlap, their cosine similarity must be especially strong before they can be grouped.
 
-The current cluster threshold is:
+The current cluster threshold depends on the embedding provider:
 
 ```text
-CLUSTER_SIMILARITY_THRESHOLD = 0.22
+HASHING_CLUSTER_SIMILARITY_THRESHOLD = 0.22
+SEMANTIC_CLUSTER_SIMILARITY_THRESHOLD = 0.42
 ```
 
 If the best candidate score is above the threshold, the article joins that cluster. Otherwise, a new cluster is created.
@@ -252,9 +254,40 @@ Available analysis endpoints:
 - `GET /clusters`
 - `GET /clusters/{id}`
 
-The dashboard shows event cards, keywords, sources, and the articles grouped under the selected event. This makes it possible to compare how different outlets covered the same story.
+The dashboard shows event cards, keywords, sources, summaries, and the articles grouped under the selected event. This makes it possible to compare how different outlets covered the same story.
 
-At this stage, the `summaries` table exists but AI summaries have not been implemented yet. The next natural step is to generate a neutral event summary from the articles inside each cluster.
+## Neutral AI Summaries
+
+News Observer generates neutral summaries lazily, when an event detail page is opened through:
+
+- `GET /clusters/{id}`
+
+The cluster list endpoint does not generate summaries. This avoids spending API calls while the user is only browsing the dashboard.
+
+Summaries are stored in the `summaries` table with:
+
+- `cluster_id`
+- `model`
+- `content`
+- `created_at`
+- `updated_at`
+
+The API reuses a stored summary when it is still fresh. A summary is considered fresh when its `updated_at` timestamp is newer than or equal to the cluster's `updated_at` timestamp.
+
+That means:
+
+- first time opening a story: generate and store a summary;
+- opening the same story again: reuse the stored summary;
+- after RSS collection adds a new article to that cluster: the cluster `updated_at` changes;
+- next time that story is opened: regenerate the summary and update the stored row.
+
+The default summary model is configured in `backend/.env`:
+
+```env
+NEWS_OBSERVER_SUMMARY_MODEL=gpt-5.5
+```
+
+The summary prompt asks for a neutral synthesis using only the articles in the cluster. It should avoid speculation, avoid favoring one outlet, and mention outlet differences carefully when relevant.
 
 ## Backend Setup
 

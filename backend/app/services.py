@@ -7,6 +7,7 @@ from .extractor import extract_article_text
 from .feeds import RSS_FEEDS
 from .models import ArticleCreate
 from .rss import fetch_all_feeds
+from .summarizer import ensure_cluster_summary
 
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,7 @@ def list_clusters(limit: int = 50):
             """
             SELECT clusters.id, clusters.label, clusters.started_at,
                    clusters.ended_at, clusters.article_count,
+                   clusters.updated_at,
                    (
                        SELECT content
                        FROM summaries
@@ -184,6 +186,7 @@ def get_cluster(cluster_id: int):
             """
             SELECT clusters.id, clusters.label, clusters.started_at,
                    clusters.ended_at, clusters.article_count,
+                   clusters.updated_at,
                    (
                        SELECT content
                        FROM summaries
@@ -226,6 +229,10 @@ def get_cluster(cluster_id: int):
 
     result = _cluster_row_to_dict(cluster)
     result["articles"] = [row_to_dict(article) for article in articles]
+    try:
+        result["summary"] = ensure_cluster_summary(result, result["articles"])
+    except Exception:
+        logger.exception("Could not generate summary for cluster %s", cluster_id)
     return result
 
 
